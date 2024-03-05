@@ -18,16 +18,16 @@
 module top(input logic clk, input logic reset, input logic [31:0] cyc_cnt, output logic passed, output logic failed);
    // Tiny tapeout I/O signals.
    logic [7:0] ui_in, uo_out;
-   logic [7:0]uio_in,  uio_out, uio_oe;
+   
    logic [31:0] r;
    always @(posedge clk) r <= 0;
    assign ui_in = r[7:0];
-   assign uio_in = 8'b0;
+   
    logic ena = 1'b0;
    logic rst_n = ! reset;
 
    // Instantiate the Tiny Tapeout module.
-   tt06_verilog_template tt(.*);
+   tt_um_template tt(.*);
 
    assign passed = top.cyc_cnt > 400;
    assign failed = 1'b0;
@@ -44,14 +44,14 @@ endmodule
 // The Tiny Tapeout module
 // =======================
 
-module tt06_verilog_template (
+module tt_um_template (
     input  wire [7:0] ui_in,    // Dedicated inputs - connected to the input switches
     output wire [7:0] uo_out,   // Dedicated outputs - connected to the 7 segment display
-       // The FPGA is based on TinyTapeout 3 which has no bidirectional I/Os (vs. TT6 for the ASIC).
+    /*   // The FPGA is based on TinyTapeout 3 which has no bidirectional I/Os (vs. TT6 for the ASIC).
     input  wire [7:0] uio_in,   // IOs: Bidirectional Input path
     output wire [7:0] uio_out,  // IOs: Bidirectional Output path
     output wire [7:0] uio_oe,   // IOs: Bidirectional Enable path (active high: 0=input, 1=output)
-    
+    */
     input  wire       ena,      // will go high when the design is enabled
     input  wire       clk,      // clock
     input  wire       rst_n     // reset_n - low to reset
@@ -691,8 +691,8 @@ logic FpgaPins_Fpga_CALC_Keypad_sampling_a0,
                //m5+cal_viz(@3, /fpga) // un-comment for markerchip comment out for FPGA programming
             
                // Connect Tiny Tapeout outputs. Note that uio_ outputs are not available in the Tiny-Tapeout-3-based FPGA boards.
-               assign uio_out = 8'b0;
-               assign uio_oe = 8'b0;
+               
+               
             //_\end_source
    
       // LEDs.
