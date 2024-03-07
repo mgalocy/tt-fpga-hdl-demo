@@ -1,4 +1,4 @@
-\m5_TLV_version 1d: tl-x.org
+\m5_TLV_version 1d --inlineGen --noDirectiveComments --noline --clkAlways --bestsv --debugSigsYosys: tl-x.org
 \m5
    use(m5-1.0)
    
@@ -19,13 +19,13 @@
    // To build within Makerchip for the FPGA or ASIC:
    //   o Use first line of file: \m5_TLV_version 1d --inlineGen --noDirectiveComments --noline --clkAlways --bestsv --debugSigsYosys: tl-x.org
    //   o set(MAKERCHIP, 0)  // (below)
-   //   o For ASIC, set my_design (below) to match the configuration of your repositoy:
+   //   o For ASIC, set my_design (below) to match the configuration of your repositoy: tt_um_template
    //       - tt_um_fpga_hdl_demo for tt_fpga_hdl_demo repo
    //       - tt_um_example for tt06_verilog_template repo
    //   o var(target, FPGA)  // or ASIC (below)
-   set(MAKERCHIP, 1)   /// 1 for simulating in Makerchip.
-   var(my_design, tt_um_template)   /// The name of your top-level TT module, to match your info.yml.
-   var(target, FPGA)  /// FPGA or ASIC
+   set(MAKERCHIP, 0)   /// 1 for simulating in Makerchip.
+   var(my_design, tt06_verilog_template)   /// The name of your top-level TT module, to match your info.yml.
+   var(target, ASIC)  /// FPGA or ASIC
    //-------------------------------------------------------
    
    var(debounce_inputs, 0)         /// 1: Provide synchronization and debouncing on all input signals.
@@ -49,84 +49,170 @@
 \TLV calc()
    
    |calc
-      m5+PmodKYPD(|calc, /keypad, @0, $ui_in[3:0], 1'b1, ['left: 40, top: 80, width: 200, height: 200'])
+      
+      
+      
+      m5+PmodKYPD(|calc, /keypad, @0, $ui_in[3:0], 1'b1, ['left: 40, top: 80, width: 20, height: 20'])
       @0
-         $reset = *reset;
-         $op[2:0] = *ui_in[6:4];
+         $reset = *reset || ($op == 3'b111) ;
+         // using switches
+         $ui_in[3:0] = *ui_in[3:0];
          
-      @1
-         $val1[7:0] = >>2$out;
-         $val2[7:0] = {4'b0, *ui_in[3:0]};
-         $sum[7:0] = $val1 + $val2;
-         $diff[7:0] = $val1 - $val2;
-         $prod[7:0] = $val1 * $val2;
-         $quot[7:0] = $val1 / $val2;
+         $op[2:0] = *ui_in[6:4];
+         //$op[2:0] = $rand;
+         
          $equals_in = *ui_in[7];
          
-         $valid = $reset ? 1'b0 : $equals_in && ! >>1$equals_in;
-         $reset_or_valid = $valid || $reset;
+      @1   
+         $val1[7:0] = >>2$out[7:0];
+         $val2[7:0] = {4'b0000, /keypad$digit_pressed};
       @2   
-         $mem[7:0] = $reset              ? 8'b0 :
-                     $valid && ($op[2:0] == 3'b101) ? $val1 :
-                                           >>1$mem;
+         //Counter 
+         $valid = (($equals_in == 1) && (>>1$equals_in == 0)); //? 1 : 0;
+         //$valid = $reset ? 0 : >>1$valid + 1; 
+         //$cnt = $reset ? 0 : >>1$cnt + 1;
+         //$valid = $cnt;
+         $valid_or_reset = $valid || $reset;
+         ?$valid_or_reset
+            //MUX input computations
+            $sum[7:0] = $val1[7:0] + $val2; // $val1[7:0] could be expressed as $val1
+            $diff[7:0] = $val1[7:0] - $val2;
+            $prod[7:0] = $val1[7:0] * $val2;
+            $quot[7:0] = $val1[7:0] / $val2;
          
-         $out[7:0] = $reset ? 8'b0 :
-                     !$valid ? >>1$out :
-                     ($op[1:0] == 3'b000) ? $sum :
-                     ($op[1:0] == 3'b001) ? $diff :
-                     ($op[1:0] == 3'b010) ? $prod :
-                     ($op[1:0] == 3'b011) ? $quot :
-                     ($op[1:0] == 3'b100) ? >>2$mem : >>1$out;
+         
          
       @3
-         m5+sseg_decoder($segments_n, /keypad$digit_pressed)
-         $digit[3:0] = $out[3:0];
+         //Encoded MUX
+         $out[7:0] =
+            $reset
+               ? 8'b0 :
+            !$valid
+               ? >>1$out :
+            $op[2:0] == 3'b100
+               ? >>2$mem[7:0] :
+            $op[2:0] == 3'b011
+               ? $quot[7:0] :
+            $op[2:0] == 3'b010
+               ? $prod[7:0] :
+            $op[2:0] == 3'b001
+               ? $diff[7:0] :
+            $op[2:0] == 3'b000
+               ? $sum[7:0] :
+               //default
+               >>1$out[7:0];
+         //mem MUX
+         $mem[7:0] =
+            $reset
+               ? 8'b0 :
+            !$valid
+               ? >>1$mem :
+            $op[2:0] == 3'b101
+               ? >>2$out :
+               //default
+               >>1$mem;
          
-         *uo_out =
-            $digit == 4'h0
-               ? 8'b00111111 :
-            $digit == 4'h1
-               ? 8'b00000110 :
-            $digit == 4'h2
-               ? 8'b01011011 :
-            $digit == 4'h3
-               ? 8'b01001111 :
-            $digit == 4'h4
-               ? 8'b01100110 :
-            $digit == 4'h5
-               ? 8'b01101101 :
-            $digit == 4'h6
-               ? 8'b01111101 :
-            $digit == 4'h7
-               ? 8'b00000111 :
-            $digit == 4'h8
-               ? 8'b01111111 :
-            $digit == 4'h9
-               ? 8'b01100111 :
-            $digit == 4'hA
-               ? 8'b01110111 :
-            $digit == 4'hB
-               ? 8'b01111100 :
-            $digit == 4'hC
-               ? 8'b00111001 :
-            $digit == 4'hD
-               ? 8'b00111001 :
-            $digit == 4'hE
-               ? 8'b01111001 :
-            $digit == 4'hF
-               ? 8'b01110001 :
-                 8'b10000000 ;
          
- 
+      @4
+         //m5+sseg_decoder($segments_n, /keypad$digit_pressed)
+         
+         
+         
+         
+         
+         
+         $digit_one[3:0] = $out[3:0];
+         $out_digitone[7:0] =
+            $digit_one == 4'h0 //2'b0000 
+               ? 8'b10111111 ://0
+            $digit_one == 4'h1 //2'b0001
+               ? 8'b10000110 ://1
+            $digit_one == 4'h2
+               ? 8'b11011011 ://2
+            $digit_one == 4'h3
+               ? 8'b11001111 ://3
+            $digit_one == 4'h4
+               ? 8'b11100110 ://4
+            $digit_one == 4'h5
+               ? 8'b11101101 ://5
+            $digit_one == 4'h6
+               ? 8'b11111101 ://6
+            $digit_one == 4'h7
+               ? 8'b10000111 ://7
+            $digit_one == 4'h8
+               ? 8'b11111111 ://8
+            $digit_one == 4'h9
+               ? 8'b11101111 ://9
+            $digit_one == 4'ha
+               ? 8'b11110111 ://a
+            $digit_one == 4'hb
+               ? 8'b11111100 ://b
+            $digit_one == 4'hc
+               ? 8'b10111001 ://c
+            $digit_one == 4'hd
+               ? 8'b11011110 ://d
+            $digit_one == 4'he
+               ? 8'b11111001 ://e
+            $digit_one == 4'hf
+               ? 8'b11110001 ://f
+            //default
+               8'b00000000;  //.
+         
+         $digit_ten[3:0] = $out[7:4];
+         $out_digitten[7:0] =
+            $digit_ten == 4'h0 //2'b0000 
+               ? 8'b00111111 ://0
+            $digit_ten == 4'h1 //2'b0001
+               ? 8'b00000110 ://1
+            $digit_ten == 4'h2
+               ? 8'b01011011 ://2
+            $digit_ten == 4'h3
+               ? 8'b01001111 ://3
+            $digit_ten == 4'h4
+               ? 8'b01100110 ://4
+            $digit_ten == 4'h5
+               ? 8'b01101101 ://5
+            $digit_ten == 4'h6
+               ? 8'b01111101 ://6
+            $digit_ten == 4'h7
+               ? 8'b00000111 ://7
+            $digit_ten == 4'h8
+               ? 8'b01111111 ://8
+            $digit_ten == 4'h9
+               ? 8'b01101111 ://9
+            $digit_ten == 4'ha
+               ? 8'b01110111 ://a
+            $digit_ten == 4'hb
+               ? 8'b01111100 ://b
+            $digit_ten == 4'hc
+               ? 8'b00111001 ://c
+            $digit_ten == 4'hd
+               ? 8'b01011110 ://d
+            $digit_ten == 4'he
+               ? 8'b01111001 ://e
+            $digit_ten == 4'hf
+               ? 8'b01110001 ://f
+            //default
+               8'b00000000;  //nothing
+         
+         $digit_flash[26:0] = $valid ? 0 : >>1$digit_flash + 1;
+         
+         
+         
+         *uo_out = /keypad$sampling ? {2{/keypad$sample_row_mask[3:0]}} :
+                   $digit_flash[25]
+                      ? $out_digitone :
+         
+                        $out_digitten;
+         
    
    // Note that pipesignals assigned here can be found under /fpga_pins/fpga.
    
    
 
-   m5+cal_viz(@2, /fpga)
+   //m5+cal_viz(@3, /fpga) // un-comment for markerchip comment out for FPGA programming 
    
    // Connect Tiny Tapeout outputs. Note that uio_ outputs are not available in the Tiny-Tapeout-3-based FPGA boards.
-   *uo_out = 8'b0;
    m5_if_neq(m5_target, FPGA, ['*uio_out = 8'b0;'])
    m5_if_neq(m5_target, FPGA, ['*uio_oe = 8'b0;'])
    
@@ -151,7 +237,7 @@ module top(input logic clk, input logic reset, input logic [31:0] cyc_cnt, outpu
    // Instantiate the Tiny Tapeout module.
    m5_user_module_name tt(.*);
    
-   assign passed = top.cyc_cnt > 60;
+   assign passed = top.cyc_cnt > 400;
    assign failed = 1'b0;
 endmodule
 
@@ -188,7 +274,9 @@ module m5_user_module_name (
    // Instantiate the Virtual FPGA Lab.
    m5+board(/top, /fpga, 7, $, , calc)
    // Label the switch inputs [0..7] (1..8 on the physical switch panel) (top-to-bottom).
-   m5+tt_input_labels_viz(['"Value[0]", "Value[1]", "Value[2]", "Value[3]", "Op[0]", "Op[1]", "Op[2]", "="'])
+   m5+tt_input_labels_viz(['"Value[0]", "Value[1]", "Value[2]", "Value[3]", "Op[0]", "Op[1]", "Op[2]", "="'])//switches
+   //m5+tt_input_labels_viz(['"KYPD row0", "KYPD row1", "KYPD row2", "KYPD row3", "D:Mask", "D:High/Dbg", "D:Reported", "Reset"'])
 
 \SV
 endmodule
+
